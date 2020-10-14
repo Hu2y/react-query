@@ -1,5 +1,8 @@
 export { QueryCache } from './queryCache'
 export { QueryClient } from './queryClient'
+export { QueryObserver } from './queryObserver'
+export { QueriesObserver } from './queriesObserver'
+export { MutationObserver } from './mutationObserver'
 export { setBatchNotifyFn, setNotifyFn } from './notifyManager'
 export { setLogger } from './logger'
 export { setFocusHandler } from './focusHandler'

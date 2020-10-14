@@ -1,11 +1,11 @@
-import { Query } from '../core/query'
-import { QueryCache } from '../core/queryCache'
-import { QueryKey, QueryOptions } from '../core/types'
+import type { QueryClient } from '../core/queryClient'
+import { Query, QueryState } from '../core/query'
+import type { QueryKey, QueryOptions } from '../core/types'
 
 // TYPES
 
 export interface DehydrateOptions {
-  shouldDehydrate?: ShouldDehydrateFunction
+  shouldDehydrateQuery?: ShouldDehydrateQueryFunction
 }
 
 export interface HydrateOptions {
@@ -19,16 +19,15 @@ interface DehydratedQueryConfig {
 interface DehydratedQuery {
   queryKey: QueryKey
   queryHash: string
-  data?: unknown
-  updatedAt: number
+  state: QueryState
   config: DehydratedQueryConfig
 }
 
 export interface DehydratedState {
-  queries: Array<DehydratedQuery>
+  queries: DehydratedQuery[]
 }
 
-export type ShouldDehydrateFunction = (query: Query) => boolean
+export type ShouldDehydrateQueryFunction = (query: Query) => boolean
 
 // FUNCTIONS
 
@@ -49,10 +48,9 @@ function dehydrateQuery(query: Query): DehydratedQuery {
     config: {
       cacheTime: serializePositiveNumber(query.cacheTime),
     },
-    data: query.state.data,
+    state: query.state,
     queryKey: query.queryKey,
     queryHash: query.queryHash,
-    updatedAt: query.state.updatedAt,
   }
 }
 
@@ -61,25 +59,30 @@ function defaultShouldDehydrate(query: Query) {
 }
 
 export function dehydrate(
-  cache: QueryCache,
+  client: QueryClient,
   options?: DehydrateOptions
 ): DehydratedState {
   options = options || {}
 
-  const shouldDehydrate = options.shouldDehydrate || defaultShouldDehydrate
+  const shouldDehydrateQuery =
+    options.shouldDehydrateQuery || defaultShouldDehydrate
+
   const queries: DehydratedQuery[] = []
 
-  cache.getAll().forEach(query => {
-    if (shouldDehydrate(query)) {
-      queries.push(dehydrateQuery(query))
-    }
-  })
+  client
+    .getQueryCache()
+    .getAll()
+    .forEach(query => {
+      if (shouldDehydrateQuery(query)) {
+        queries.push(dehydrateQuery(query))
+      }
+    })
 
   return { queries }
 }
 
 export function hydrate(
-  cache: QueryCache,
+  client: QueryClient,
   dehydratedState: unknown,
   options?: HydrateOptions
 ): void {
@@ -87,34 +90,30 @@ export function hydrate(
     return
   }
 
-  const defaultOptions = options?.defaultOptions || {}
+  const queryCache = client.getQueryCache()
   const queries = (dehydratedState as DehydratedState).queries || []
 
   queries.forEach(dehydratedQuery => {
-    let query = cache.get(dehydratedQuery.queryHash)
+    const query = queryCache.get(dehydratedQuery.queryHash)
 
     // Do not hydrate if an existing query exists with newer data
-    if (query && query.state.updatedAt >= dehydratedQuery.updatedAt) {
+    if (query) {
+      if (query.state.updatedAt < dehydratedQuery.state.updatedAt) {
+        query.setState(dehydratedQuery.state)
+      }
       return
     }
 
-    if (!query) {
-      query = new Query({
-        cache: cache,
+    // Restore query
+    queryCache.restore(
+      client,
+      {
+        ...options?.defaultOptions,
         queryKey: dehydratedQuery.queryKey,
         queryHash: dehydratedQuery.queryHash,
-        options: {
-          ...defaultOptions,
-          cacheTime: deserializePositiveNumber(
-            dehydratedQuery.config.cacheTime
-          ),
-        },
-      })
-      cache.add(query)
-    }
-
-    query.setData(dehydratedQuery.data, {
-      updatedAt: dehydratedQuery.updatedAt,
-    })
+        cacheTime: deserializePositiveNumber(dehydratedQuery.config.cacheTime),
+      },
+      dehydratedQuery.state
+    )
   })
 }

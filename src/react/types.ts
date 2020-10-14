@@ -1,6 +1,7 @@
+import { RetryValue, RetryDelayValue } from '../core/retryer'
 import {
   MutateOptions,
-  MutationOptions,
+  MutationStatus,
   QueryObserverOptions,
   QueryObserverResult,
 } from '../core/types'
@@ -33,13 +34,31 @@ export interface UseQueryResult<TData = unknown, TError = unknown>
 export interface UseInfiniteQueryResult<TData = unknown, TError = unknown>
   extends UseBaseQueryResult<TData[], TError> {}
 
-export type MutationStatus = 'idle' | 'loading' | 'error' | 'success'
+export interface UseMutationOptions<TData, TError, TVariables, TContext> {
+  mutationKey?: string | unknown[]
+  onMutate?: (variables: TVariables) => Promise<TContext> | TContext
+  onSuccess?: (
+    data: TData,
+    variables: TVariables,
+    context: TContext | undefined
+  ) => Promise<void> | void
+  onError?: (
+    error: TError,
+    variables: TVariables,
+    context: TContext | undefined
+  ) => Promise<void> | void
+  onSettled?: (
+    data: TData | undefined,
+    error: TError | null,
+    variables: TVariables,
+    context: TContext | undefined
+  ) => Promise<void> | void
+  retry?: RetryValue<TError>
+  retryDelay?: RetryDelayValue
+  useErrorBoundary?: boolean
+}
 
-export type MutationFunction<TData = unknown, TVariables = unknown> = (
-  variables: TVariables
-) => Promise<TData>
-
-export type MutateFunction<
+export type UseMutateFunction<
   TData = unknown,
   TError = unknown,
   TVariables = unknown,
@@ -49,7 +68,7 @@ export type MutateFunction<
   options?: MutateOptions<TData, TError, TVariables, TContext>
 ) => void
 
-export type MutateAsyncFunction<
+export type UseMutateAsyncFunction<
   TData = unknown,
   TError = unknown,
   TVariables = unknown,
@@ -59,23 +78,20 @@ export type MutateAsyncFunction<
   options?: MutateOptions<TData, TError, TVariables, TContext>
 ) => Promise<TData>
 
-export interface UseMutationOptions<TData, TError, TVariables, TContext>
-  extends MutationOptions<TData, TError, TVariables, TContext> {}
-
 export interface UseMutationResult<
   TData = unknown,
   TError = unknown,
   TVariables = unknown,
   TContext = unknown
 > {
+  context: TContext | undefined
   data: TData | undefined
   error: TError | null
-  isError: boolean
-  isIdle: boolean
-  isLoading: boolean
-  isSuccess: boolean
-  mutate: MutateFunction<TData, TError, TVariables, TContext>
-  mutateAsync: MutateAsyncFunction<TData, TError, TVariables, TContext>
+  failureCount: number
+  isPaused: boolean
+  mutate: UseMutateFunction<TData, TError, TVariables, TContext>
+  mutateAsync: UseMutateAsyncFunction<TData, TError, TVariables, TContext>
   reset: () => void
   status: MutationStatus
+  variables: TVariables | undefined
 }

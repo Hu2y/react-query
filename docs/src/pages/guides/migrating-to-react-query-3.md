@@ -25,11 +25,11 @@ Use the `QueryClientProvider` component to connect a `QueryClient` to your appli
 ```js
 import { QueryClient, QueryClientProvider, QueryCache } from 'react-query'
 
-const cache = new QueryCache()
-const client = new QueryClient({ cache })
+const queryCache = new QueryCache()
+const queryClient = new QueryClient({ queryCache })
 
 function App() {
-  return <QueryClientProvider client={client}>...</QueryClientProvider>
+  return <QueryClientProvider client={queryClient}>...</QueryClientProvider>
 }
 ```
 
@@ -42,10 +42,10 @@ import { useCallback } from 'react'
 import { useQueryClient } from 'react-query'
 
 function Todo() {
-  const client = useQueryClient()
+  const queryClient = useQueryClient()
 
   const onClickButton = useCallback(() => {
-    client.invalidateQueries('posts')
+    queryClient.invalidateQueries('posts')
   }, [client])
 
   return <button onClick={onClickButton}>Refetch</button>
@@ -57,8 +57,8 @@ function Todo() {
 The `ReactQueryConfigProvider` component has been removed. Default options for queries and mutations can now be specified in `QueryClient`:
 
 ```js
-const client = new QueryClient({
-  cache,
+const queryClient = new QueryClient({
+  queryCache,
   defaultOptions: {
     queries: {
       staleTime: Infinity,
@@ -157,6 +157,9 @@ mutate('todo', {
   onError: error => {
     console.error(error)
   },
+  onSettled: () => {
+    console.log('settled)
+  },
 })
 ```
 
@@ -170,8 +173,13 @@ try {
   console.log(data)
 } catch (error) {
   console.error(error)
+} finally {
+  console.log('settled)
 }
 ```
+
+Callbacks passed to the `mutate` or `mutateAsync` functions will now override the callbacks defined on `useMutation`.
+The `mutateAsync` function can be used to compose side effects.
 
 ### Query object syntax
 
@@ -195,17 +203,17 @@ useQuery({
 
 ### queryCache.prefetchQuery()
 
-The `client.prefetchQuery()` method should now only be used for prefetching scenarios where the result is not relevant.
+The `queryClient.prefetchQuery()` method should now only be used for prefetching scenarios where the result is not relevant.
 
-Use the `client.fetchQueryData()` method to get the query data or error:
+Use the `queryClient.fetchQueryData()` method to get the query data or error:
 
 ```js
 // Prefetch a query:
-await client.prefetchQuery('posts', fetchPosts)
+await queryClient.prefetchQuery('posts', fetchPosts)
 
 // Fetch a query:
 try {
-  const data = await client.fetchQueryData('posts', fetchPosts)
+  const data = await queryClient.fetchQueryData('posts', fetchPosts)
 } catch (error) {
   // Error handling
 }
@@ -237,7 +245,7 @@ The `queryCache.getQueries()` method has been replaced by `cache.findAll()`.
 
 ### queryCache.isFetching
 
-The `queryCache.isFetching` property has been replaced by `client.isFetching()`.
+The `queryCache.isFetching` property has been replaced by `queryClient.isFetching()`.
 
 ### QueryOptions.enabled
 
@@ -336,12 +344,12 @@ function Overview() {
 }
 ```
 
-#### client.watchQuery()
+#### QueryObserver
 
-The `client.watchQuery()` method can be used to create and/or watch a query:
+A `QueryObserver` can be used to create and/or watch a query:
 
 ```js
-const observer = client.watchQuery('posts')
+const observer = new QueryObserver(queryClient, { queryKey: 'posts' })
 
 const unsubscribe = observer.subscribe(result => {
   console.log(result)
@@ -349,12 +357,12 @@ const unsubscribe = observer.subscribe(result => {
 })
 ```
 
-#### client.watchQueries()
+#### QueriesObserver
 
-The `client.watchQueries()` method can be used to create and/or watch multiple queries:
+A `QueriesObserver` can be used to create and/or watch multiple queries:
 
 ```js
-const observer = client.watchQueries([
+const observer = new QueriesObserver(queryClient, [
   { queryKey: ['post', 1], queryFn: fetchPost },
   { queryKey: ['post', 2], queryFn: fetchPost },
 ])
@@ -365,15 +373,27 @@ const unsubscribe = observer.subscribe(result => {
 })
 ```
 
-## `client.setQueryDefaults`
+## `queryClient.setQueryDefaults`
 
-The `client.setQueryDefaults()` method to set default options for a specific query. If the query does not exist yet it will create it.
+The `queryClient.setQueryDefaults()` method can be used to set default options for specific queries:
 
 ```js
-client.setQueryDefaults('posts', fetchPosts)
+queryClient.setQueryDefaults('posts', { queryFn: fetchPosts })
 
 function Component() {
   const { data } = useQuery('posts')
+}
+```
+
+## `queryClient.setMutationDefaults`
+
+The `queryClient.setMutationDefaults()` method can be used to set default options for specific mutations:
+
+```js
+queryClient.setMutationDefaults('addPost', { mutationFn: addPost })
+
+function Component() {
+  const { mutate } = useMutation('addPost')
 }
 ```
 

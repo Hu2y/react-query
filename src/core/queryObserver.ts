@@ -21,16 +21,6 @@ import type {
 import type { Query, QueryState, Action, FetchOptions } from './query'
 import type { QueryClient } from './queryClient'
 
-interface QueryObserverConfig<
-  TData = unknown,
-  TError = unknown,
-  TQueryFnData = TData,
-  TQueryData = TQueryFnData
-> {
-  client: QueryClient
-  options?: QueryObserverOptions<TData, TError, TQueryFnData, TQueryData>
-}
-
 type QueryObserverListener<TData, TError> = (
   result: QueryObserverResult<TData, TError>
 ) => void
@@ -61,10 +51,11 @@ export class QueryObserver<
   private refetchIntervalId?: number
 
   constructor(
-    config: QueryObserverConfig<TData, TError, TQueryFnData, TQueryData>
+    client: QueryClient,
+    options: QueryObserverOptions<TData, TError, TQueryFnData, TQueryData>
   ) {
-    this.client = config.client
-    this.options = config.client.defaultQueryObserverOptions(config.options)
+    this.client = client
+    this.options = client.defaultQueryObserverOptions(options)
     this.listeners = []
     this.initialDataUpdateCount = 0
 
@@ -84,7 +75,7 @@ export class QueryObserver<
     this.listeners.push(callback)
 
     if (this.listeners.length === 1) {
-      this.currentQuery.subscribeObserver(this)
+      this.currentQuery.addObserver(this)
 
       if (this.willFetchOnMount()) {
         this.executeFetch()
@@ -125,7 +116,7 @@ export class QueryObserver<
   destroy(): void {
     this.listeners = []
     this.clearTimers()
-    this.currentQuery.unsubscribeObserver(this)
+    this.currentQuery.removeObserver(this)
   }
 
   setOptions(
@@ -404,9 +395,13 @@ export class QueryObserver<
 
   private updateQuery(): void {
     const prevQuery = this.currentQuery
+
     const query = this.client
-      .getCache()
-      .build(this.options as QueryOptions<TQueryData, TError, TQueryFnData>)
+      .getQueryCache()
+      .build(
+        this.client,
+        this.options as QueryOptions<TQueryData, TError, TQueryFnData>
+      )
 
     if (query === prevQuery) {
       return
@@ -426,8 +421,8 @@ export class QueryObserver<
       return
     }
 
-    prevQuery?.unsubscribeObserver(this)
-    this.currentQuery.subscribeObserver(this)
+    prevQuery?.removeObserver(this)
+    this.currentQuery.addObserver(this)
 
     if (this.options.notifyOnStatusChange !== false) {
       this.notify({ listeners: true })
@@ -511,7 +506,7 @@ export class QueryObserver<
 
       // Then the cache listeners
       if (notifyOptions.cache) {
-        this.client.getCache().notify(currentQuery)
+        this.client.getQueryCache().notify(currentQuery)
       }
     })
   }

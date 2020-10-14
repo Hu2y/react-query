@@ -2,16 +2,19 @@ import { fireEvent, waitFor } from '@testing-library/react'
 import React from 'react'
 
 import { useMutation, QueryClient, QueryCache } from '../..'
+import { UseMutationResult } from '../types'
 import {
   mockConsoleError,
+  mockNavigatorOnLine,
+  queryKey,
   renderWithClient,
   setActTimeout,
   sleep,
 } from './utils'
 
 describe('useMutation', () => {
-  const cache = new QueryCache()
-  const client = new QueryClient({ cache })
+  const queryCache = new QueryCache()
+  const queryClient = new QueryClient({ queryCache })
 
   it('should be able to reset `data`', async () => {
     function Page() {
@@ -28,7 +31,7 @@ describe('useMutation', () => {
       )
     }
 
-    const { getByTestId, getByText } = renderWithClient(client, <Page />)
+    const { getByTestId, getByText } = renderWithClient(queryClient, <Page />)
 
     expect(getByTestId('title').textContent).toBe('')
 
@@ -65,7 +68,7 @@ describe('useMutation', () => {
     }
 
     const { getByTestId, getByText, queryByTestId } = renderWithClient(
-      client,
+      queryClient,
       <Page />
     )
 
@@ -112,7 +115,7 @@ describe('useMutation', () => {
       )
     }
 
-    const { getByTestId, getByText } = renderWithClient(client, <Page />)
+    const { getByTestId, getByText } = renderWithClient(queryClient, <Page />)
 
     expect(getByTestId('title').textContent).toBe('0')
 
@@ -169,7 +172,7 @@ describe('useMutation', () => {
       )
     }
 
-    const { getByTestId, getByText } = renderWithClient(client, <Page />)
+    const { getByTestId, getByText } = renderWithClient(queryClient, <Page />)
 
     expect(getByTestId('title').textContent).toBe('0')
 
@@ -206,7 +209,7 @@ describe('useMutation', () => {
     consoleMock.mockRestore()
   })
 
-  it('should process all success callbacks in the correct order when using mutateAsync', async () => {
+  it('should be able to override the useMutation success callbacks', async () => {
     const callbacks: string[] = []
 
     function Page() {
@@ -238,20 +241,18 @@ describe('useMutation', () => {
       return null
     }
 
-    renderWithClient(client, <Page />)
+    renderWithClient(queryClient, <Page />)
 
     await sleep(100)
 
     expect(callbacks).toEqual([
-      'useMutation.onSuccess',
-      'useMutation.onSettled',
       'mutateAsync.onSuccess',
       'mutateAsync.onSettled',
       'mutateAsync.result:todo',
     ])
   })
 
-  it('should process all error callbacks in the correct order when using mutateAsync', async () => {
+  it('should be able to override the error callbacks when using mutateAsync', async () => {
     const consoleMock = mockConsoleError()
 
     const callbacks: string[] = []
@@ -289,17 +290,164 @@ describe('useMutation', () => {
       return null
     }
 
-    renderWithClient(client, <Page />)
+    renderWithClient(queryClient, <Page />)
 
     await sleep(100)
 
     expect(callbacks).toEqual([
-      'useMutation.onError',
-      'useMutation.onSettled',
       'mutateAsync.onError',
       'mutateAsync.onSettled',
       'mutateAsync.error:oops',
     ])
+
+    consoleMock.mockRestore()
+  })
+
+  it('should be able to use mutation defaults', async () => {
+    const key = queryKey()
+
+    queryClient.setMutationDefaults(key, {
+      mutationFn: async (text: string) => text,
+    })
+
+    const states: UseMutationResult<any, any, any, any>[] = []
+
+    function Page() {
+      const state = useMutation<string, unknown, string>(key)
+
+      states.push(state)
+
+      const { mutate } = state
+
+      React.useEffect(() => {
+        setActTimeout(() => {
+          mutate('todo')
+        }, 10)
+      }, [mutate])
+
+      return null
+    }
+
+    renderWithClient(queryClient, <Page />)
+
+    await sleep(100)
+
+    expect(states.length).toBe(3)
+    expect(states[0]).toMatchObject({ data: undefined, isLoading: false })
+    expect(states[1]).toMatchObject({ data: undefined, isLoading: true })
+    expect(states[2]).toMatchObject({ data: 'todo', isLoading: false })
+  })
+
+  it('should be able to retry a failed mutation', async () => {
+    const consoleMock = mockConsoleError()
+
+    let count = 0
+
+    function Page() {
+      const { mutate } = useMutation(
+        (_text: string) => {
+          count++
+          return Promise.reject('oops')
+        },
+        {
+          retry: 1,
+          retryDelay: 5,
+        }
+      )
+
+      React.useEffect(() => {
+        setActTimeout(() => {
+          mutate('todo')
+        }, 10)
+      }, [mutate])
+
+      return null
+    }
+
+    renderWithClient(queryClient, <Page />)
+
+    await sleep(100)
+
+    expect(count).toBe(2)
+
+    consoleMock.mockRestore()
+  })
+
+  it('should be able to retry a mutation when online', async () => {
+    const consoleMock = mockConsoleError()
+    mockNavigatorOnLine(false)
+
+    let count = 0
+    const states: UseMutationResult<any, any, any, any>[] = []
+
+    function Page() {
+      const state = useMutation(
+        (_text: string) => {
+          count++
+          return count > 1 ? Promise.resolve('data') : Promise.reject('oops')
+        },
+        {
+          retry: 1,
+          retryDelay: 5,
+        }
+      )
+
+      states.push(state)
+
+      const { mutate } = state
+
+      React.useEffect(() => {
+        setActTimeout(() => {
+          mutate('todo')
+        }, 10)
+      }, [mutate])
+
+      return null
+    }
+
+    renderWithClient(queryClient, <Page />)
+
+    await sleep(50)
+
+    expect(states.length).toBe(4)
+    expect(states[0]).toMatchObject({
+      isLoading: false,
+      isPaused: false,
+      failureCount: 0,
+    })
+    expect(states[1]).toMatchObject({
+      isLoading: true,
+      isPaused: false,
+      failureCount: 0,
+    })
+    expect(states[2]).toMatchObject({
+      isLoading: true,
+      isPaused: false,
+      failureCount: 1,
+    })
+    expect(states[3]).toMatchObject({
+      isLoading: true,
+      isPaused: true,
+      failureCount: 1,
+    })
+
+    mockNavigatorOnLine(true)
+    window.dispatchEvent(new Event('online'))
+
+    await sleep(50)
+
+    expect(states.length).toBe(6)
+    expect(states[4]).toMatchObject({
+      isLoading: true,
+      isPaused: false,
+      failureCount: 1,
+    })
+    expect(states[5]).toMatchObject({
+      isLoading: false,
+      isPaused: false,
+      failureCount: 1,
+      data: 'data',
+    })
 
     consoleMock.mockRestore()
   })

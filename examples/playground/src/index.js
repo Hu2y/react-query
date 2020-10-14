@@ -28,8 +28,8 @@ let errorRate = 0.05;
 let queryTimeMin = 1000;
 let queryTimeMax = 2000;
 
-const cache = new QueryCache();
-const client = new QueryClient({ cache });
+const queryCache = new QueryCache();
+const queryClient = new QueryClient({ queryCache });
 
 function Root() {
   const [staleTime, setStaleTime] = React.useState(1000);
@@ -49,7 +49,7 @@ function Root() {
   }, [localErrorRate, localFetchTimeMax, localFetchTimeMin]);
 
   React.useEffect(() => {
-    client.setDefaultOptions({
+    queryClient.setDefaultOptions({
       queries: {
         staleTime,
         cacheTime,
@@ -58,7 +58,7 @@ function Root() {
   }, [cacheTime, staleTime]);
 
   return (
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={queryClient}>
       <p>
         The "staleTime" and "cacheTime" durations have been altered in this
         example to show how query stale-ness and query caching work on a
@@ -130,7 +130,7 @@ function Root() {
 }
 
 function App() {
-  const client = useQueryClient();
+  const queryClient = useQueryClient();
   const [editingIndex, setEditingIndex] = React.useState(null);
   const [views, setViews] = React.useState(["", "fruit", "grape"]);
   // const [views, setViews] = React.useState([""]);
@@ -138,7 +138,7 @@ function App() {
   return (
     <div className="App">
       <div>
-        <button onClick={() => client.invalidateQueries(true)}>
+        <button onClick={() => queryClient.invalidateQueries(true)}>
           Force Refetch All
         </button>
       </div>
@@ -232,7 +232,7 @@ function Todos({ initialFilter = "", setEditingIndex }) {
 }
 
 function EditTodo({ editingIndex, setEditingIndex }) {
-  const client = useQueryClient();
+  const queryClient = useQueryClient();
 
   // Don't attempt to query until editingIndex is truthy
   const { status, data, isFetching, error, failureCount, refetch } = useQuery(
@@ -256,8 +256,8 @@ function EditTodo({ editingIndex, setEditingIndex }) {
   const saveMutation = useMutation(patchTodo, {
     onSuccess: (data) => {
       // Update `todos` and the individual todo queries when this mutation succeeds
-      client.invalidateQueries("todos");
-      client.setQueryData(["todo", { id: editingIndex }], data);
+      queryClient.invalidateQueries("todos");
+      queryClient.setQueryData(["todo", { id: editingIndex }], data);
     },
   });
 
@@ -337,12 +337,12 @@ function EditTodo({ editingIndex, setEditingIndex }) {
 }
 
 function AddTodo() {
-  const client = useQueryClient();
+  const queryClient = useQueryClient();
   const [name, setName] = React.useState("");
 
   const addMutation = useMutation(postTodo, {
     onSuccess: () => {
-      client.invalidateQueries("todos");
+      queryClient.invalidateQueries("todos");
     },
   });
 
